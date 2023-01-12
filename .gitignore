@@ -7,8 +7,6 @@ img_out/
 miou_out_train/
 miou_out_val/
 miou_out_*/
-*.png
-*.jpg
 
 # ingore model weights 
 model_data/
