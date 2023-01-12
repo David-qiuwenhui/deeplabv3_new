@@ -13,3 +13,6 @@ miou_out_*/
 # ingore model weights 
 model_data/
 *.pth
+
+# system
+*.DS_Store
