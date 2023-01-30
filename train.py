@@ -8,8 +8,7 @@ import torch.distributed as dist
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from nets.deeplabv3new_training import (get_lr_scheduler, set_optimizer_lr,
-                                 weights_init)
+from nets.deeplabv3new_training import get_lr_scheduler, set_optimizer_lr, weights_init
 from utils.callbacks import LossHistory, EvalCallback
 from utils.dataloader import SegmentationDataset, seg_dataset_collate
 from utils.utils import show_config
@@ -18,11 +17,11 @@ from utils.utils import time_synchronized
 
 from nets.deeplabv3 import deeplabv3_resnet50
 
-'''
+"""
     如果格式有误，参考：https://github.com/bubbliiiing/segmentation-format-fix
     调参是一门蛮重要的学问，比如随着batch的增大学习率也可以增大，效果也会好一些；过深的网络不要用太大的学习率等等。
     这些都是经验上，只能靠各位同学多查询资料和自己试试了。
-'''
+"""
 
 
 def main(args):
@@ -39,7 +38,7 @@ def main(args):
     # ----------------------------------------------------------------------------------------------------------------------------#
     #   训练分为两个阶段，分别是冻结阶段和解冻阶段。设置冻结阶段是为了满足机器性能不足的同学的训练需求。
     #   冻结训练需要的显存较小，显卡非常差的情况下，可设置Freeze_Epoch等于UnFreeze_Epoch，此时仅仅进行冻结训练。
-    #      
+    #
     #   在此提供若干参数设置建议，各位训练者根据自己的需求进行灵活调整：
     #   （一）从整个模型的预训练权重开始训练：
     #       Adam：
@@ -155,16 +154,18 @@ def main(args):
         rank = int(os.environ["RANK"])
         device = torch.device("cuda", local_rank)
         if local_rank == 0:
-            print(f"[{os.getpid()}] (rank = {rank}, local_rank = {local_rank}) training...")
+            print(
+                f"[{os.getpid()}] (rank = {rank}, local_rank = {local_rank}) training..."
+            )
             print("Gpu Device Count : ", ngpus_per_node)
     else:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         local_rank = 0
 
     # ---------- 实例化卷积神经网络模型 ----------
-    model = deeplabv3_resnet50(aux=aux_branch,
-                               num_classes=num_classes,
-                               pretrain_backbone=pretrained)
+    model = deeplabv3_resnet50(
+        aux=aux_branch, num_classes=num_classes, pretrain_backbone=pretrained
+    )
 
     # model = HRnet(num_classes=num_classes,  # num_classes = 7
     #               backbone=backbone,  # backbone = "hrnetv2_w32"
@@ -172,9 +173,9 @@ def main(args):
     # 模型的参数初始化
     if not pretrained:
         weights_init(model)
-    if model_path != '':
+    if model_path != "":
         if local_rank == 0:
-            print('Load weights {}.'.format(model_path))
+            print("Load weights {}.".format(model_path))
         #   根据预训练权重的Key和模型的Key进行加载
         model_dict = model.state_dict()
         pretrained_dict = torch.load(model_path, map_location=device)
@@ -189,13 +190,25 @@ def main(args):
         model.load_state_dict(model_dict)
         #   显示没有匹配上的Key
         if local_rank == 0:
-            print("\nSuccessful Load Key:", str(load_key)[:500], "……\nSuccessful Load Key Num:", len(load_key))
-            print("\nFail To Load Key:", str(no_load_key)[:500], "……\nFail To Load Key num:", len(no_load_key))
+            print(
+                "\nSuccessful Load Key:",
+                str(load_key)[:500],
+                "……\nSuccessful Load Key Num:",
+                len(load_key),
+            )
+            print(
+                "\nFail To Load Key:",
+                str(no_load_key)[:500],
+                "……\nFail To Load Key num:",
+                len(no_load_key),
+            )
             print("\n\033[1;33;44m温馨提示，head部分没有载入是正常现象，Backbone部分没有载入是错误的。\033[0m")
 
     #  记录Loss
     if local_rank == 0:
-        time_str = datetime.datetime.strftime(datetime.datetime.now(), '%Y_%m_%d_%H_%M_%S')
+        time_str = datetime.datetime.strftime(
+            datetime.datetime.now(), "%Y_%m_%d_%H_%M_%S"
+        )
         log_dir = os.path.join(save_dir, "loss_" + str(time_str))
         loss_history = LossHistory(log_dir, model, input_shape)
     else:
@@ -203,6 +216,7 @@ def main(args):
     # 设置混合精度训练
     if fp16:
         from torch.cuda.amp import GradScaler as GradScaler
+
         scaler = GradScaler()
     else:
         scaler = None
@@ -218,36 +232,56 @@ def main(args):
         if distributed:
             # 多卡平行运行
             model_train = model_train.cuda(local_rank)
-            model_train = torch.nn.parallel.DistributedDataParallel(model_train, device_ids=[local_rank],
-                                                                    find_unused_parameters=True)
+            model_train = torch.nn.parallel.DistributedDataParallel(
+                model_train, device_ids=[local_rank], find_unused_parameters=True
+            )
         else:
             model_train = torch.nn.DataParallel(model)
             cudnn.benchmark = True
             model_train = model_train.cuda()
 
     #   读取数据集对应的txt
-    with open(os.path.join(SUIMdevkit_path, "SUIM2022/ImageSets/Segmentation/train.txt"), "r") as f:
+    with open(
+        os.path.join(SUIMdevkit_path, "SUIM2022/ImageSets/Segmentation/train.txt"), "r"
+    ) as f:
         train_lines = f.readlines()
-    with open(os.path.join(SUIMdevkit_path, "SUIM2022/ImageSets/Segmentation/val.txt"), "r") as f:
+    with open(
+        os.path.join(SUIMdevkit_path, "SUIM2022/ImageSets/Segmentation/val.txt"), "r"
+    ) as f:
         val_lines = f.readlines()
     num_train = len(train_lines)
     num_val = len(val_lines)
 
     if local_rank == 0:
         show_config(
-            backbone=backbone, model_path=model_path, input_shape=input_shape,
-            aux_branch=aux_branch, num_classes=num_classes,
-            Init_Epoch=Init_Epoch, Freeze_Train=Freeze_Train, Freeze_Epoch=Freeze_Epoch, UnFreeze_Epoch=UnFreeze_Epoch,
-            Freeze_batch_size=Freeze_batch_size, Unfreeze_batch_size=Unfreeze_batch_size,
-            optimizer_type=optimizer_type, lr_decay_type=lr_decay_type,
-            Init_lr=Init_lr, Min_lr=Min_lr, momentum=momentum, weight_decay=weight_decay,
-            dice_loss=dice_loss, focal_loss=focal_loss,
-            num_workers=num_workers, num_train=num_train, num_val=num_val,
-            save_period=save_period, save_dir=save_dir,
+            backbone=backbone,
+            model_path=model_path,
+            input_shape=input_shape,
+            aux_branch=aux_branch,
+            num_classes=num_classes,
+            Init_Epoch=Init_Epoch,
+            Freeze_Train=Freeze_Train,
+            Freeze_Epoch=Freeze_Epoch,
+            UnFreeze_Epoch=UnFreeze_Epoch,
+            Freeze_batch_size=Freeze_batch_size,
+            Unfreeze_batch_size=Unfreeze_batch_size,
+            optimizer_type=optimizer_type,
+            lr_decay_type=lr_decay_type,
+            Init_lr=Init_lr,
+            Min_lr=Min_lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+            dice_loss=dice_loss,
+            focal_loss=focal_loss,
+            num_workers=num_workers,
+            num_train=num_train,
+            num_val=num_val,
+            save_period=save_period,
+            save_dir=save_dir,
         )
         # ---------------------------------------------------------#
         #   总训练世代指的是遍历全部数据的总次数
-        #   总训练步长指的是梯度下降的总次数 
+        #   总训练步长指的是梯度下降的总次数
         #   每个训练世代包含若干训练步长，每个训练步长进行一次梯度下降。
         #   此处仅建议最低训练世代，上不封顶，计算时只考虑了解冻部分
         # ----------------------------------------------------------#
@@ -255,13 +289,18 @@ def main(args):
         total_step = num_train // Unfreeze_batch_size * UnFreeze_Epoch
         if total_step <= wanted_step:
             wanted_epoch = wanted_step // (num_train // Unfreeze_batch_size) + 1
-            print("\n\033[1;33;44m[Warning] 使用%s优化器时，建议将训练总步长设置到%d以上。\033[0m" % (
-                optimizer_type, wanted_step))
             print(
-                "\033[1;33;44m[Warning] 本次运行的总训练数据量为%d，Unfreeze_batch_size为%d，共训练%d个Epoch，计算出总训练步长为%d。\033[0m" % (
-                    num_train, Unfreeze_batch_size, UnFreeze_Epoch, total_step))
-            print("\033[1;33;44m[Warning] 由于总训练步长为%d，小于建议总步长%d，建议设置总世代为%d。\033[0m" % (
-                total_step, wanted_step, wanted_epoch))
+                "\n\033[1;33;44m[Warning] 使用%s优化器时，建议将训练总步长设置到%d以上。\033[0m"
+                % (optimizer_type, wanted_step)
+            )
+            print(
+                "\033[1;33;44m[Warning] 本次运行的总训练数据量为%d，Unfreeze_batch_size为%d，共训练%d个Epoch，计算出总训练步长为%d。\033[0m"
+                % (num_train, Unfreeze_batch_size, UnFreeze_Epoch, total_step)
+            )
+            print(
+                "\033[1;33;44m[Warning] 由于总训练步长为%d，小于建议总步长%d，建议设置总世代为%d。\033[0m"
+                % (total_step, wanted_step, wanted_epoch)
+            )
 
     # ------------------------------------------------------#
     #   主干特征提取网络特征通用，冻结训练可以加快训练速度
@@ -282,27 +321,34 @@ def main(args):
     # ---------- 配置训练的优化器 ----------
     #  判断当前batch_size，自适应调整学习率
     nbs = 16
-    lr_limit_max = 5e-4 if optimizer_type == 'adam' else 1e-1
-    lr_limit_min = 3e-4 if optimizer_type == 'adam' else 5e-4
+    lr_limit_max = 5e-4 if optimizer_type == "adam" else 1e-1
+    lr_limit_min = 3e-4 if optimizer_type == "adam" else 5e-4
     Init_lr_fit = min(max(batch_size / nbs * Init_lr, lr_limit_min), lr_limit_max)
-    Min_lr_fit = min(max(batch_size / nbs * Min_lr, lr_limit_min * 1e-2), lr_limit_max * 1e-2)
+    Min_lr_fit = min(
+        max(batch_size / nbs * Min_lr, lr_limit_min * 1e-2), lr_limit_max * 1e-2
+    )
 
     # 根据optimizer_type选择优化器
     optimizer = {
-        'adam': optim.Adam(params=model.parameters(),
-                           lr=Init_lr_fit,
-                           betas=(momentum, 0.999),
-                           weight_decay=weight_decay),
-
-        'sgd': optim.SGD(params=model.parameters(),
-                         lr=Init_lr_fit,
-                         momentum=momentum,
-                         nesterov=True,
-                         weight_decay=weight_decay)
+        "adam": optim.Adam(
+            params=model.parameters(),
+            lr=Init_lr_fit,
+            betas=(momentum, 0.999),
+            weight_decay=weight_decay,
+        ),
+        "sgd": optim.SGD(
+            params=model.parameters(),
+            lr=Init_lr_fit,
+            momentum=momentum,
+            nesterov=True,
+            weight_decay=weight_decay,
+        ),
     }[optimizer_type]
 
     # 获得学习率下降的公式
-    lr_scheduler_func = get_lr_scheduler(lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch)
+    lr_scheduler_func = get_lr_scheduler(
+        lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch
+    )
     # 判断每一个epoch的长度
     epoch_step = num_train // batch_size
     epoch_step_val = num_val // batch_size
@@ -310,20 +356,22 @@ def main(args):
         raise ValueError("数据集过小或batch size过大，无法继续进行训练，请扩充数据集。")
 
     # ---------- 实例化训练集和测试集 ----------
-    train_dataset = SegmentationDataset(train_lines,
-                                        input_shape,
-                                        num_classes,
-                                        train=True,
-                                        dataset_path=SUIMdevkit_path)
-    val_dataset = SegmentationDataset(val_lines,
-                                      input_shape,
-                                      num_classes,
-                                      train=False,
-                                      dataset_path=SUIMdevkit_path)
+    train_dataset = SegmentationDataset(
+        train_lines, input_shape, num_classes, train=True, dataset_path=SUIMdevkit_path
+    )
+    val_dataset = SegmentationDataset(
+        val_lines, input_shape, num_classes, train=False, dataset_path=SUIMdevkit_path
+    )
 
     if distributed:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, shuffle=True, )
-        val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False, )
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset,
+            shuffle=True,
+        )
+        val_sampler = torch.utils.data.distributed.DistributedSampler(
+            val_dataset,
+            shuffle=False,
+        )
         batch_size = batch_size // ngpus_per_node
         shuffle = False
     else:
@@ -332,34 +380,40 @@ def main(args):
         shuffle = True
 
     # 将训练数据载入内存
-    gen = DataLoader(dataset=train_dataset,
-                     shuffle=shuffle,
-                     batch_size=batch_size,
-                     num_workers=num_workers,
-                     pin_memory=True,
-                     drop_last=True,
-                     collate_fn=seg_dataset_collate,
-                     sampler=train_sampler)
-    gen_val = DataLoader(dataset=val_dataset,
-                         shuffle=shuffle,
-                         batch_size=batch_size,
-                         num_workers=num_workers,
-                         pin_memory=True,
-                         drop_last=True,
-                         collate_fn=seg_dataset_collate,
-                         sampler=val_sampler)
+    gen = DataLoader(
+        dataset=train_dataset,
+        shuffle=shuffle,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=True,
+        collate_fn=seg_dataset_collate,
+        sampler=train_sampler,
+    )
+    gen_val = DataLoader(
+        dataset=val_dataset,
+        shuffle=shuffle,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=True,
+        collate_fn=seg_dataset_collate,
+        sampler=val_sampler,
+    )
 
     #   记录eval的map曲线
     if local_rank == 0:
-        eval_callback = EvalCallback(net=model,
-                                     input_shape=input_shape,
-                                     num_classes=num_classes,
-                                     image_ids=val_lines,
-                                     dataset_path=SUIMdevkit_path,
-                                     log_dir=log_dir,
-                                     cuda=Cuda,
-                                     eval_flag=eval_flag,
-                                     period=eval_period)
+        eval_callback = EvalCallback(
+            net=model,
+            input_shape=input_shape,
+            num_classes=num_classes,
+            image_ids=val_lines,
+            dataset_path=SUIMdevkit_path,
+            log_dir=log_dir,
+            cuda=Cuda,
+            eval_flag=eval_flag,
+            period=eval_period,
+        )
     else:
         eval_callback = None
 
@@ -372,12 +426,18 @@ def main(args):
 
             #   判断当前batch_size，自适应调整学习率
             nbs = 16
-            lr_limit_max = 5e-4 if optimizer_type == 'adam' else 1e-1
-            lr_limit_min = 3e-4 if optimizer_type == 'adam' else 5e-4
-            Init_lr_fit = min(max(batch_size / nbs * Init_lr, lr_limit_min), lr_limit_max)
-            Min_lr_fit = min(max(batch_size / nbs * Min_lr, lr_limit_min * 1e-2), lr_limit_max * 1e-2)
+            lr_limit_max = 5e-4 if optimizer_type == "adam" else 1e-1
+            lr_limit_min = 3e-4 if optimizer_type == "adam" else 5e-4
+            Init_lr_fit = min(
+                max(batch_size / nbs * Init_lr, lr_limit_min), lr_limit_max
+            )
+            Min_lr_fit = min(
+                max(batch_size / nbs * Min_lr, lr_limit_min * 1e-2), lr_limit_max * 1e-2
+            )
             #   获得学习率下降的公式
-            lr_scheduler_func = get_lr_scheduler(lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch)
+            lr_scheduler_func = get_lr_scheduler(
+                lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch
+            )
 
             for param in model.backbone.parameters():
                 param.requires_grad = True
@@ -388,22 +448,26 @@ def main(args):
             if epoch_step == 0 or epoch_step_val == 0:
                 raise ValueError("数据集过小，无法继续进行训练，请扩充数据集。")
 
-            gen = DataLoader(dataset=train_dataset,
-                             shuffle=shuffle,
-                             batch_size=batch_size,
-                             num_workers=num_workers,
-                             pin_memory=True,
-                             drop_last=True,
-                             collate_fn=seg_dataset_collate,
-                             sampler=train_sampler)
-            gen_val = DataLoader(dataset=val_dataset,
-                                 shuffle=shuffle,
-                                 batch_size=batch_size,
-                                 num_workers=num_workers,
-                                 pin_memory=True,
-                                 drop_last=True,
-                                 collate_fn=seg_dataset_collate,
-                                 sampler=val_sampler)
+            gen = DataLoader(
+                dataset=train_dataset,
+                shuffle=shuffle,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                pin_memory=True,
+                drop_last=True,
+                collate_fn=seg_dataset_collate,
+                sampler=train_sampler,
+            )
+            gen_val = DataLoader(
+                dataset=val_dataset,
+                shuffle=shuffle,
+                batch_size=batch_size,
+                num_workers=num_workers,
+                pin_memory=True,
+                drop_last=True,
+                collate_fn=seg_dataset_collate,
+                sampler=val_sampler,
+            )
 
             UnFreeze_flag = True
 
@@ -412,28 +476,30 @@ def main(args):
 
         set_optimizer_lr(optimizer, lr_scheduler_func, epoch)
 
-        fit_one_epoch(model_train,
-                      model,
-                      aux_branch,
-                      loss_history,
-                      eval_callback,
-                      optimizer,
-                      epoch,
-                      epoch_step,
-                      epoch_step_val,
-                      gen,
-                      gen_val,
-                      UnFreeze_Epoch,
-                      Cuda,
-                      dice_loss,
-                      focal_loss,
-                      cls_weights,
-                      num_classes,
-                      fp16,
-                      scaler,
-                      save_period,
-                      save_dir,
-                      local_rank)
+        fit_one_epoch(
+            model_train,
+            model,
+            aux_branch,
+            loss_history,
+            eval_callback,
+            optimizer,
+            epoch,
+            epoch_step,
+            epoch_step_val,
+            gen,
+            gen_val,
+            UnFreeze_Epoch,
+            Cuda,
+            dice_loss,
+            focal_loss,
+            cls_weights,
+            num_classes,
+            fp16,
+            scaler,
+            save_period,
+            save_dir,
+            local_rank,
+        )
 
         if distributed:
             dist.barrier()
@@ -448,46 +514,82 @@ def main(args):
 
 def parse_args():
     import argparse
+
     parser = argparse.ArgumentParser(description="pytorch deeplabv3 training")
     # ---------- 数据集超参数 ----------
-    parser.add_argument("--data-path", default="../../dataset/SUIMdevkit", type=str, help="dataset root")
-    parser.add_argument("--input-size", default=512, type=int, help="the size of input image")
+    parser.add_argument(
+        "--data-path", default="../../dataset/SUIMdevkit", type=str, help="dataset root"
+    )
+    parser.add_argument(
+        "--input-size", default=512, type=int, help="the size of input image"
+    )
 
     # ---------- 卷积模型超参数 ----------
-    parser.add_argument("--backbone", default="hrnetv2_w32", help="hrnetv2_18, hrnetv2_w32, hrnet_w48")
+    parser.add_argument(
+        "--backbone", default="hrnetv2_w32", help="hrnetv2_18, hrnetv2_w32, hrnet_w48"
+    )
     parser.add_argument("--downsample-factor", default=8, type=int, help="8, 16")
     parser.add_argument("--aux-branch", default=True, type=bool, help="auxilier loss")
     parser.add_argument("--num-classes", default=7, type=int)
     parser.add_argument("--pretrained", default=False, type=bool)
-    parser.add_argument("--model-path", default="./logs/ep335-loss0.232-val_loss0.562.pth", help="model weights path")
+    parser.add_argument(
+        "--model-path",
+        default="./logs/ep335-loss0.232-val_loss0.562.pth",
+        help="model weights path",
+    )
 
     # ---------- 硬件的超参数 ----------
     parser.add_argument("--cuda", default=True, type=bool, help="use cuda")
-    parser.add_argument("--amp", default=True, type=bool, help="Use torch.cuda.amp for mixed precision training")
+    parser.add_argument(
+        "--amp",
+        default=True,
+        type=bool,
+        help="Use torch.cuda.amp for mixed precision training",
+    )
 
     # ---------- 训练Epoch和Batch size超参数 ----------
     parser.add_argument("--freeze-train", default=False, type=bool)
     parser.add_argument("--freeze-batch-size", default=16, type=int)
     parser.add_argument("--unfreeze-batch-size", default=16, type=int)
-    parser.add_argument('--init-epoch', default=335, type=int, metavar='N',
-                        help='init epoch')
-    parser.add_argument("--freeze-epochs", default=0, type=int, metavar="N",
-                        help="number of freeze epochs to train")
-    parser.add_argument("--unfreeze-epochs", default=500, type=int, metavar="N",
-                        help="number of unfreeze epochs to train")
+    parser.add_argument(
+        "--init-epoch", default=335, type=int, metavar="N", help="init epoch"
+    )
+    parser.add_argument(
+        "--freeze-epochs",
+        default=0,
+        type=int,
+        metavar="N",
+        help="number of freeze epochs to train",
+    )
+    parser.add_argument(
+        "--unfreeze-epochs",
+        default=500,
+        type=int,
+        metavar="N",
+        help="number of unfreeze epochs to train",
+    )
 
     # ---------- 训练的优化器超参数 ----------
-    parser.add_argument('--optimizer', default='sgd', type=str)
-    parser.add_argument('--init-lr', default=1e-2, type=float, help='initial learning rate')  # 7e-3
+    parser.add_argument("--optimizer", default="sgd", type=str)
+    parser.add_argument(
+        "--init-lr", default=1e-2, type=float, help="initial learning rate"
+    )  # 7e-3
     parser.add_argument("--lr-decay-type", default="cos", type=str)
-    parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
-                        help='momentum')
-    parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
-                        metavar='W', help='weight decay (default: 1e-4)',
-                        dest='weight_decay')
+    parser.add_argument(
+        "--momentum", default=0.9, type=float, metavar="M", help="momentum"
+    )
+    parser.add_argument(
+        "--wd",
+        "--weight-decay",
+        default=1e-4,
+        type=float,
+        metavar="W",
+        help="weight decay (default: 1e-4)",
+        dest="weight_decay",
+    )
     # ---------- 损失函数的超参数 ----------
-    parser.add_argument('--dice-loss', default=False, type=bool)
-    parser.add_argument('--focal-loss', default=False, type=bool)
+    parser.add_argument("--dice-loss", default=False, type=bool)
+    parser.add_argument("--focal-loss", default=False, type=bool)
 
     # ---------- 模型验证和保存的超参数 ----------
     parser.add_argument("--eval-flag", default=True, type=bool)
