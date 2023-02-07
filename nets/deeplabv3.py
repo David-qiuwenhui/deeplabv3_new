@@ -1,9 +1,9 @@
-'''
+"""
 coding: utf-8
 @Author: qiuwenhui
 @Software: PyCharm
 @Time: 2023/1/9 17:34
-'''
+"""
 from collections import OrderedDict
 from typing import Dict, List
 
@@ -98,10 +98,12 @@ class DeepLabV3(nn.Module):
 
     def forward(self, x: Tensor) -> Dict[str, Tensor]:
         input_shape = x.shape[-2:]  # x(bs,3,480,480)
-        
+
         # contract: features is a dict of tensors
-        features = self.backbone(x)  # feature={OrderedDict:2} {'aux':Tensor(bs,1024,60,60),'out':Tensor(bs,2048,60,60)}
-        
+        features = self.backbone(
+            x
+        )  # feature={OrderedDict:2} {'aux':Tensor(bs,1024,60,60),'out':Tensor(bs,2048,60,60)}
+
         # 输出特征提取中主分类器和辅助分类器的特征信息
         result = OrderedDict()
         x = features["out"]
@@ -132,7 +134,9 @@ class FCNHead(nn.Sequential):
     def __init__(self, in_channels, channels):
         inter_channels = in_channels // 4  # inter_channels=1024//4=256 辅助分支中间部分的维度
         super(FCNHead, self).__init__(
-            nn.Conv2d(in_channels, inter_channels, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(
+                in_channels, inter_channels, kernel_size=3, padding=1, bias=False
+            ),
             nn.BatchNorm2d(inter_channels),
             nn.ReLU(),
             nn.Dropout(p=0.1),
@@ -337,4 +341,3 @@ def deeplabv3_mobilenetv3_large(aux, num_classes=21, pretrain_backbone=False):
 
     model = DeepLabV3(backbone, classifier, aux_classifier)
     return model
-
